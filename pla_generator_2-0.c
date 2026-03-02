@@ -6,7 +6,8 @@
 int main(int argc, char *argv[]) {
 
   if (argc != 4) {
-    printf("Usage: %s <row_size> <number_of_files> <output_filename>\n", argv[0]);
+    printf("Usage: %s <row_size> <number_of_files> <output_filename>\n",
+           argv[0]);
     return 1;
   }
 
@@ -19,17 +20,22 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  srand(time(NULL));
+  srand((unsigned)time(NULL));
+
+  const int rows = N * N;
+  const int cols = N;
+
+  /* ---- Parse filename once ---- */
 
   char base[512];
   char extension[128] = "";
+  int multiple = (K > 1);
 
-  if (K > 1) {
+  if (multiple) {
     char *dot = strrchr(input_filename, '.');
-
     if (dot) {
       size_t base_len = dot - input_filename;
-      strncpy(base, input_filename, base_len);
+      memcpy(base, input_filename, base_len);
       base[base_len] = '\0';
       strcpy(extension, dot);
     } else {
@@ -37,15 +43,17 @@ int main(int argc, char *argv[]) {
     }
   }
 
+  char filename[512];
+
+  /* ---- Generate files ---- */
+
   for (int file_index = 0; file_index < K; file_index++) {
 
-    char filename[512];
-
-    if (K == 1) {
-      strcpy(filename, input_filename);
+    if (multiple) {
+      snprintf(filename, sizeof(filename), "%s_%d%s", base, file_index,
+               extension);
     } else {
-      snprintf(filename, sizeof(filename),
-               "%s_%d%s", base, file_index, extension);
+      strcpy(filename, input_filename);
     }
 
     FILE *f = fopen(filename, "w");
@@ -54,22 +62,26 @@ int main(int argc, char *argv[]) {
       return 1;
     }
 
-    int rows = N * N;
-    int cols = N;
-
     fprintf(f, ".i %d\n", N);
     fprintf(f, ".o 1\n");
     fprintf(f, ".p %d\n\n", rows);
 
+    /* ---- Allocate row buffer ONCE per file ---- */
+
+    int *used = malloc(N * sizeof(int));
+    if (!used) {
+      fclose(f);
+      return 1;
+    }
+
     for (int r = 0; r < rows; r++) {
 
-      int ones = rand() % (N + 1);
-      int *used = calloc(N, sizeof(int));
-      if (!used) {
-        fclose(f);
-        return 1;
-      }
+      /* Reset buffer (faster than calloc per row) */
+      memset(used, 0, N * sizeof(int));
 
+      int ones = rand() % (N + 1);
+
+      /* Fill unique random positions */
       for (int i = 0; i < ones; i++) {
         int pos;
         do {
@@ -78,14 +90,16 @@ int main(int argc, char *argv[]) {
         used[pos] = 1;
       }
 
+      /* Print row */
       for (int c = 0; c < cols; c++)
-        fprintf(f, used[c] ? "1" : "-");
+        fputc(used[c] ? '1' : '-', f);
 
-      fprintf(f, " 1\n");
-      free(used);
+      fputs(" 1\n", f);
     }
 
-    fprintf(f, "\n.e\n");
+    free(used);
+
+    fputs("\n.e\n", f);
     fclose(f);
 
     printf("File '%s' created successfully.\n", filename);
