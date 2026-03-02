@@ -3,6 +3,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <memory>
 #include <numeric>
@@ -136,8 +137,11 @@ public:
         return;
 
       // Choose how many sons this node will have
-      int sons = random_range(min_sons, max_sons);
-      sons = std::min(sons, node->slot_count);
+      int sons = 0;
+      do {
+        sons = random_range(min_sons, max_sons);
+        sons = std::min(sons, node->slot_count);
+      } while (sons <= 0 && node->depth == 0);
 
       if (sons <= 0)
         return; // leaf due to randomness
@@ -395,22 +399,24 @@ int main(int argc, char *argv[]) {
 
   auto root = generator.generate_all_random();
 
-  std::cout << TreeGenerator::export_level_structure_as_config(root.get(),
-                                                               pla_dir);
+  // Generate configuration text
+  std::string config_output =
+      TreeGenerator::export_level_structure_as_config(root.get(), pla_dir);
 
-  // ---- EXPORT STRUCTURE ----
-  //   std::string output = TreeGenerator::export_level_structure(root.get());
+  // Create the config path as string concatenation
+  std::string config_path = pla_dir + "/system.conf";
 
-  //   std::cout << output;
+  // Write config file
+  std::ofstream out_file(config_path);
+  if (!out_file) {
+    std::cerr << "Failed to write config file: " << config_path << "\n";
+    return 1;
+  }
 
-  //   std::cout << "\n--- PREORDER ---\n";
-  //   TreeGenerator::preorder(root.get());
+  out_file << config_output;
+  out_file.close();
 
-  //   std::cout << "\n--- POSTORDER ---\n";
-  //   TreeGenerator::postorder(root.get());
-
-  //   std::cout << "\n--- LEVEL ORDER ---\n";
-  //   TreeGenerator::level_order(root.get());
+  std::cout << "Configuration saved to: " << config_path << "\n";
 
   return 0;
 }
