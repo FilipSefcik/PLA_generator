@@ -1,10 +1,15 @@
 #include <algorithm>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <filesystem>
 #include <iostream>
 #include <memory>
 #include <numeric>
 #include <queue>
 #include <random>
 #include <sstream>
+#include <string>
 #include <vector>
 
 class Node {
@@ -260,14 +265,116 @@ public:
 
     return result.str();
   }
+
+  static bool generate_pla_file(int row_size,
+                                const std::string &output_filename) {
+    if (row_size <= 0)
+      return false;
+
+    const int N = row_size;
+    const int rows = N * N;
+    const int cols = N;
+
+    FILE *f = std::fopen(output_filename.c_str(), "w");
+    if (!f)
+      return false;
+
+    std::fprintf(f, ".i %d\n", N);
+    std::fprintf(f, ".o 1\n");
+    std::fprintf(f, ".p %d\n\n", rows);
+
+    std::mt19937 rng(std::random_device{}());
+    std::uniform_int_distribution<int> ones_dist(0, N);
+    std::uniform_int_distribution<int> pos_dist(0, N - 1);
+
+    int *used = (int *)std::malloc((size_t)N * sizeof(int));
+    if (!used) {
+      std::fclose(f);
+      return false;
+    }
+
+    for (int r = 0; r < rows; r++) {
+      std::memset(used, 0, (size_t)N * sizeof(int));
+
+      int ones = ones_dist(rng);
+
+      for (int i = 0; i < ones; i++) {
+        int pos;
+        do {
+          pos = pos_dist(rng);
+        } while (used[pos]);
+        used[pos] = 1;
+      }
+
+      for (int c = 0; c < cols; c++)
+        std::fputc(used[c] ? '1' : '-', f);
+
+      std::fputs(" 1\n", f);
+    }
+
+    std::free(used);
+    std::fputs("\n.e\n", f);
+    std::fclose(f);
+    return true;
+  }
+
+  static std::string
+  export_level_structure_as_config(const Node *root,
+                                   const std::string &pla_dir) {
+    if (!root)
+      return "";
+
+    std::filesystem::create_directories(pla_dir);
+
+    std::ostringstream modules_info;
+    std::ostringstream connections;
+
+    std::queue<const Node *> q;
+    q.push(root);
+
+    while (!q.empty()) {
+      const Node *current = q.front();
+      q.pop();
+
+      // PLA path for this module
+      std::string pla_path =
+          pla_dir + "/M" + std::to_string(current->id) + ".pla";
+
+      // IMPORTANT: row_size = slot_count of THIS node
+      if (!generate_pla_file(current->slot_count, pla_path)) {
+        std::cerr << "Failed to generate PLA: " << pla_path << "\n";
+      }
+
+      // ---- STRING 1 ----
+      modules_info << "M" << current->id << " " << pla_path << " 0\n";
+
+      // ---- STRING 2 ----
+      connections << "M" << current->id << " ";
+
+      for (const auto &slot : current->slots) {
+        if (slot) {
+          connections << "M" << slot->id;
+          q.push(slot.get());
+        } else {
+          connections << "V";
+        }
+      }
+      connections << "\n";
+    }
+
+    std::ostringstream result;
+    result << modules_info.str() << "\n" << connections.str();
+    return result.str();
+  }
 };
 
 int main(int argc, char *argv[]) {
 
-  if (argc != 6) {
+  if (argc != 7) {
     std::cout << "Usage:\n"
               << argv[0]
-              << " <max_depth> <min_sons> <max_sons> <min_slots> <max_slots>\n";
+              << " <max_depth> <min_sons> <max_sons> <min_slots> <max_slots> "
+                 "<pla_dir>\n";
     return 1;
   }
 
@@ -276,6 +383,7 @@ int main(int argc, char *argv[]) {
   int max_sons = std::stoi(argv[3]);
   int min_slots = std::stoi(argv[4]);
   int max_slots = std::stoi(argv[5]);
+  std::string pla_dir = argv[6];
 
   if (min_sons < 0 || max_sons < 0 || min_slots <= 0 || max_slots <= 0 ||
       min_sons > max_sons || min_slots > max_slots) {
@@ -287,10 +395,13 @@ int main(int argc, char *argv[]) {
 
   auto root = generator.generate_all_random();
 
-  // ---- EXPORT STRUCTURE ----
-  std::string output = TreeGenerator::export_level_structure(root.get());
+  std::cout << TreeGenerator::export_level_structure_as_config(root.get(),
+                                                               pla_dir);
 
-  std::cout << output;
+  // ---- EXPORT STRUCTURE ----
+  //   std::string output = TreeGenerator::export_level_structure(root.get());
+
+  //   std::cout << output;
 
   //   std::cout << "\n--- PREORDER ---\n";
   //   TreeGenerator::preorder(root.get());
