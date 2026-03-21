@@ -41,9 +41,10 @@ private:
   }
 
 public:
-  TreeGenerator(int md, int min_s, int max_s, int min_slots_, int max_slots_)
+  TreeGenerator(int md, int min_s, int max_s, int min_slots_, int max_slots_,
+                unsigned int seed = std::random_device{}())
       : max_depth(md), min_sons(min_s), max_sons(max_s), min_slots(min_slots_),
-        max_slots(max_slots_), rng(std::random_device{}()) {}
+        max_slots(max_slots_), rng(seed) {}
 
   std::unique_ptr<Node> generate_with_backbone() {
 
@@ -374,11 +375,11 @@ public:
 
 int main(int argc, char *argv[]) {
 
-  if (argc != 7) {
+  if (argc != 8) {
     std::cout << "Usage:\n"
               << argv[0]
               << " <max_depth> <min_sons> <max_sons> <min_slots> <max_slots> "
-                 "<pla_dir>\n";
+                 "<seed> <pla_dir>\n";
     return 1;
   }
 
@@ -387,15 +388,18 @@ int main(int argc, char *argv[]) {
   int max_sons = std::stoi(argv[3]);
   int min_slots = std::stoi(argv[4]);
   int max_slots = std::stoi(argv[5]);
-  std::string pla_dir = argv[6];
+  int seed = std::stoi(argv[6]);
+  std::string pla_dir = argv[7];
 
   if (min_sons < 0 || max_sons < 0 || min_slots <= 0 || max_slots <= 0 ||
-      min_sons > max_sons || min_slots > max_slots) {
+      min_sons > max_sons || min_slots > max_slots || max_depth <= 0 ||
+      seed < 0 || pla_dir.empty()) {
     std::cout << "Invalid parameters.\n";
     return 1;
   }
 
-  TreeGenerator generator(max_depth, min_sons, max_sons, min_slots, max_slots);
+  TreeGenerator generator(max_depth, min_sons, max_sons, min_slots, max_slots,
+                          seed);
 
   auto root = generator.generate_all_random();
 
@@ -417,6 +421,32 @@ int main(int argc, char *argv[]) {
   out_file.close();
 
   std::cout << "Configuration saved to: " << config_path << "\n";
+
+  // Additional outputs
+  std::cout << "Seed: " << seed << "\n";
+
+  // Count the number of nodes and the number of variables (slots)
+  int node_count = 0;
+  int variable_count = 0;
+
+  // Traverse the tree to count nodes and slots
+  std::function<void(const Node *)> count_nodes_and_slots =
+      [&](const Node *node) {
+        if (!node)
+          return;
+        node_count++; // Count the current node
+        variable_count +=
+            node->slot_count; // Add the number of slots (variables)
+        for (const auto &child : node->slots) {
+          count_nodes_and_slots(child.get());
+        }
+      };
+
+  count_nodes_and_slots(root.get());
+
+  std::cout << "Number of modules: " << node_count << "\n";
+  std::cout << "Number of variables: " << variable_count << "\n";
+  std::cout << "Tree depth: " << max_depth << "\n";
 
   return 0;
 }
